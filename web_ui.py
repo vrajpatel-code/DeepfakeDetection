@@ -309,9 +309,6 @@ def predict_and_visualize(image: Image.Image) -> tuple[np.ndarray, str]:
 # ---------------------------------------------------------------------
 # Gradio UI
 # ---------------------------------------------------------------------
-iface = build_interface()
-
-
 if __name__ == "__main__":
     import argparse
 

@@ -61,8 +61,11 @@ class _TeeStream(io.TextIOBase):
         return len(data)
 
     def flush(self) -> None:
-        self._primary.flush()
-        self._secondary.flush()
+        try:
+            self._primary.flush()
+            self._secondary.flush()
+        except ValueError:
+            pass
 
     def isatty(self) -> bool:  # noqa: D401 - TextIOBase contract
         return bool(getattr(self._primary, "isatty", lambda: False)())

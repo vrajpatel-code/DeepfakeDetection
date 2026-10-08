@@ -481,7 +481,7 @@ def main() -> None:  # noqa: PLR0915
             num_workers=num_workers,
             pin_memory=True,
             persistent_workers=num_workers > 0,
-            prefetch_factor=2,
+            **({"prefetch_factor": 2} if num_workers > 0 else {}),
         )
 
         opt = optim.AdamW(

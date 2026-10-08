@@ -1,10 +1,10 @@
 seed: 1
-device: cuda
+device: cpu
 
 data:
-  root: data/mini_deepfake_dataset
-  test_split: test
-  val_split: val
+  root: data/Dataset
+  test_split: Test
+  val_split: Validation
   num_classes: 2
   img_size: 224
 
@@ -18,9 +18,9 @@ models:
         val_center_crop: true
     inference:
       weights: weights/efficientnet_b3.pth
-      split: test
-      batch_size: 256
-      num_workers: 2
+      split: Test
+      batch_size: 32
+      num_workers: 0
       img_size: 224
   efficientformerv2_s1:
     output_dir: runs/efficientformerv2_s1
@@ -31,9 +31,9 @@ models:
         val_center_crop: true
     inference:
       weights: weights/efficientformerv2_s1.pth
-      split: test
-      batch_size: 256
-      num_workers: 4
+      split: Test
+      batch_size: 32
+      num_workers: 0
       img_size: 224
   faster_vit_2_224:
     output_dir: runs/faster_vit_2_224
@@ -44,12 +44,10 @@ models:
         val_center_crop: true
     inference:
       weights: weights/faster_vit_2_224.pth
-      split: test
-      batch_size: 256
-      num_workers: 4
+      split: Test
+      batch_size: 32
+      num_workers: 0
       img_size: 224
 
 selection:
-  - efficientnet_b3
   - efficientformerv2_s1
-  - faster_vit_2_224

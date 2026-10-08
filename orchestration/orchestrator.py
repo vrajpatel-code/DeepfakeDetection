@@ -89,7 +89,10 @@ def tee_output(log_path: Path) -> Iterator[None]:
 
             def flush(self) -> None:
                 stdout.flush()
-                log_file.flush()
+                try:
+                    log_file.flush()
+                except ValueError:
+                    pass  # file already closed during shutdown
 
             def isatty(self) -> bool:  # noqa: D401 - standard file contract
                 return bool(getattr(stdout, "isatty", lambda: False)())
@@ -236,6 +239,8 @@ def build_env_overrides(
             ("accum_steps", "ACCUM_STEPS"),
             ("warmup_epochs", "WARMUP_EPOCHS"),
             ("early_stop_patience", "EARLY_STOP_PATIENCE"),
+            ("max_samples_per_class", "MAX_SAMPLES_PER_CLASS"),
+            ("max_val_samples_per_class", "MAX_VAL_SAMPLES_PER_CLASS"),
         ):
             value = train_cfg.get(key)
             if value is not None:
@@ -301,7 +306,7 @@ def run_training_job(
     log_path = run_paths.logs / "train.log"
     log_path.unlink(missing_ok=True)
     overrides["LOG_PATH"] = str(log_path)
-    console.print(f"[bold]→ training {model_cfg['name']}[/]")
+    console.print(f"[bold]-> training {model_cfg['name']}[/]")
     with patched_environ(overrides):
         trainer_main = import_trainer(spec.train_module)
         trainer_main()
@@ -422,7 +427,7 @@ def run_inference_job(
     model_cfg: dict[str, Any],
     run_paths: RunPaths,
 ) -> None:
-    console.print(f"[bold]→ inference {model_cfg['name']}[/]")
+    console.print(f"[bold]-> inference {model_cfg['name']}[/]")
     log_path = run_paths.logs / "inference.log"
     log_path.unlink(missing_ok=True)
     with tee_output(log_path):

@@ -14,9 +14,12 @@ Training regime:
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
+import shutil
 from time import perf_counter
 
+import numpy as np
 import timm
 import torch
 from PIL import Image
@@ -30,7 +33,7 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 from torch import nn, optim
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 from torchvision import datasets, transforms
 from torchvision.transforms import InterpolationMode
 
@@ -50,15 +53,15 @@ from orchestration.train_env import (
 )
 
 # Configuration constants (could be moved to a config file).
-DATA_ROOT: Path = Path.home() / "code" / "DeepfakeDetection" / "data" / "Dataset"
+DATA_ROOT: Path = Path(__file__).resolve().parent.parent / "data" / "Dataset"
 MODEL_NAME: str = "efficientformerv2_s1"
 DEFAULT_EPOCHS: int = 5
-DEFAULT_BATCH_SIZE: int = 128
+DEFAULT_BATCH_SIZE: int = 32
 DEFAULT_IMG_SIZE: int = 224
-DEFAULT_NUM_WORKERS: int = 8
+DEFAULT_NUM_WORKERS: int = 0
 DEFAULT_LR: float = 1e-4
 DEFAULT_WEIGHT_DECAY: float = 5e-2
-BEST_WEIGHTS_NAME: str = "EfficientFormerV2_S1.pth"
+BEST_WEIGHTS_NAME: str = "efficientformerv2_s1.pth"
 BEST_CKPT_NAME: str = "best.ckpt"
 LATEST_CKPT_NAME: str = "latest.ckpt"
 
@@ -94,6 +97,9 @@ def get_loaders(
     num_workers: int,
     *,
     expected_classes: int | None = None,
+    max_train_per_class: int = 0,
+    max_val_per_class: int = 0,
+    seed: int = 42,
 ) -> tuple[DataLoader, DataLoader]:
     """Build train/validation loaders with light augmentations on train."""
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
@@ -181,6 +187,26 @@ def get_loaders(
     if expected_classes is not None:
         require_num_classes(train_ds, expected_classes, split=train_split)
     val_ds = datasets.ImageFolder(data_root / val_split, transform=val_t)
+
+    if max_train_per_class > 0:
+        rng = np.random.RandomState(seed)
+        train_indices: list[int] = []
+        for class_idx in range(len(train_ds.classes)):
+            class_indices = [i for i, target in enumerate(train_ds.targets) if target == class_idx]
+            chosen = rng.choice(class_indices, min(len(class_indices), max_train_per_class), replace=False)
+            train_indices.extend(chosen)
+        rng.shuffle(train_indices)
+        train_ds = Subset(train_ds, train_indices)
+
+    if max_val_per_class > 0:
+        rng = np.random.RandomState(seed)
+        val_indices: list[int] = []
+        for class_idx in range(len(val_ds.classes)):
+            class_indices = [i for i, target in enumerate(val_ds.targets) if target == class_idx]
+            chosen = rng.choice(class_indices, min(len(class_indices), max_val_per_class), replace=False)
+            val_indices.extend(chosen)
+        rng.shuffle(val_indices)
+        val_ds = Subset(val_ds, val_indices)
 
     train_dl = DataLoader(
         train_ds,
@@ -276,6 +302,8 @@ def main() -> None:  # noqa: PLR0915
     num_classes = env_int("NUM_CLASSES", 2)
     lr = env_float("LR", DEFAULT_LR)
     weight_decay = env_float("WEIGHT_DECAY", DEFAULT_WEIGHT_DECAY)
+    max_train_per_class = env_int("MAX_SAMPLES_PER_CLASS", 0)
+    max_val_per_class = env_int("MAX_VAL_SAMPLES_PER_CLASS", 0)
 
     use_cuda = torch.cuda.is_available()
     device = "cuda" if use_cuda else "cpu"
@@ -291,6 +319,9 @@ def main() -> None:  # noqa: PLR0915
             device = requested
             use_cuda = requested.startswith("cuda")
     torch.backends.cudnn.benchmark = use_cuda and env.seed is None
+
+    if device == "cpu":
+        torch.set_num_threads(os.cpu_count() or 8)
 
     if not (data_root / train_split).exists() or not (data_root / val_split).exists():
         console.print(f"[bold red]Dataset not found under[/] {data_root}")
@@ -308,6 +339,9 @@ def main() -> None:  # noqa: PLR0915
             batch_size,
             num_workers,
             expected_classes=num_classes,
+            max_train_per_class=max_train_per_class,
+            max_val_per_class=max_val_per_class,
+            seed=env.seed or 42,
         )
     except ValueError as exc:
         console.print(
@@ -450,15 +484,23 @@ def main() -> None:  # noqa: PLR0915
 
             if improved:
                 save_best_checkpoint(env, state)
+                root_weights_dir = Path(__file__).resolve().parent.parent / "weights"
+                root_weights_dir.mkdir(parents=True, exist_ok=True)
+                root_weights_path = root_weights_dir / "efficientformerv2_s1.pth"
+                torch.save(state["model"], root_weights_path)
                 console.print(
                     f"[bold green]new best[/] val_acc={best_val_acc:.4f} "
-                    f"(epoch {best_epoch}) → saved {env.best_weights_path.name}",
+                    f"(epoch {best_epoch}) → saved {env.best_weights_path.name} and {root_weights_path.name}",
                 )
 
     console.print(f"[bold green]Best weights saved →[/] {env.best_weights_path.resolve()}")
     console.print(
         f"[bold green]Best checkpoint saved →[/] {env.best_checkpoint_path.resolve()}",
     )
+    root_weights = Path(__file__).resolve().parent.parent / "weights" / "efficientformerv2_s1.pth"
+    if env.best_weights_path.exists():
+        shutil.copy2(env.best_weights_path, root_weights)
+        console.print(f"[bold green]Synced best weights to[/] {root_weights.resolve()}")
 
 
 if __name__ == "__main__":
