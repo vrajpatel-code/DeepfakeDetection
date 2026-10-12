@@ -14,7 +14,6 @@ from dataclasses import dataclass, replace
 
 import timm
 from efficientnet_pytorch import EfficientNet
-from fastervit import create_model
 from torch import nn
 
 
@@ -41,6 +40,12 @@ def _build_efficientformer(model_name: str, num_classes: int) -> nn.Module:
 
 
 def _build_fastervit(model_name: str, num_classes: int) -> nn.Module:
+    try:
+        from fastervit import create_model  # lazy import — optional dependency
+    except ImportError as exc:
+        raise ImportError(
+            "fastervit is not installed. Run: pip install fastervit"
+        ) from exc
     model = create_model(model_name, pretrained=False)
     in_features = model.head.in_features  # type: ignore[attr-defined]
     model.head = nn.Linear(in_features, num_classes)  # type: ignore[attr-defined]
